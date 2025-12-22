@@ -153,6 +153,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  // 通用 fetch 代理（用于第三方 API，避免 CORS）
+  if (message.action === 'fetchProxy') {
+    fetch(message.url)
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(data => sendResponse({ success: true, data }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+  
   // 获取统计数据
   if (message.action === 'getStats') {
     chrome.storage.sync.get([

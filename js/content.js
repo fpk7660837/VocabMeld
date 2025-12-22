@@ -138,6 +138,7 @@
           processMode: result.processMode || 'both',
           autoProcess: result.autoProcess ?? false,
           showPhonetic: result.showPhonetic ?? true,
+          dictionaryType: result.dictionaryType || 'zh-en',
           showAddMemorize: result.showAddMemorize ?? true,
           cacheMaxSize: result.cacheMaxSize || DEFAULT_CACHE_MAX_SIZE,
           translationStyle: result.translationStyle || 'translation-original',
@@ -184,9 +185,14 @@
   }
 
   async function saveWordCache() {
+    // 使用 Map 确保 key 唯一（Map 本身不会有重复 key）
     const data = [];
+    const seenKeys = new Set();
     for (const [key, value] of wordCache) {
-      data.push({ key, ...value });
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        data.push({ key, ...value });
+      }
     }
     return new Promise((resolve, reject) => {
       chrome.storage.local.set({ vocabmeld_word_cache: data }, () => {
@@ -757,10 +763,10 @@
 
 ## 规则：
 1. 选择约 ${aiTargetCount} 个词汇（实际返回数量可以根据文本内容灵活调整，但不要超过 ${maxReplacements * 2} 个）
-2. 不要翻译：域名、地址、缩写、人名、地名、产品名、数字、代码、URL、已经是目标语言的词
-3. 优先选择：有学习价值的词汇、不同难度级别的词汇
-4. 翻译方向：从 ${sourceLang} 翻译到 ${targetLang}
-5. 翻译倾向：结合上下文，夹杂起来也能容易被理解，尽量只翻译成最合适的词汇，而不是多个含义。
+2. 优先选择：有学习价值的词汇、不同难度级别的词汇
+3. 翻译方向：从 ${sourceLang} 翻译到 ${targetLang}
+4. 翻译倾向：结合上下文只翻译成最合适的词汇，而不是多个含义。
+5. 不要翻译专有名词、缩写、数字、代码等内容，也不要重复翻译已经是${targetLang}的内容。
 
 ## CEFR等级从简单到复杂依次为：A1-C2
 
@@ -1059,6 +1065,164 @@ ${uncached.join(', ')}
     }
 
     return allResults.filter(item => targetWords.some(w => w.toLowerCase() === item.original.toLowerCase()));
+  }
+
+  // 根据上下文重新翻译单词
+  async function retranslateWithContext(originalWord) {
+    if (!config.apiEndpoint) {
+      showToast('请先配置 API');
+      return;
+    }
+    
+    // 找到包含该单词的元素，获取上下文
+    const elements = document.querySelectorAll('.vocabmeld-translated');
+    let contextSentence = '';
+    let targetElement = null;
+    
+    for (const el of elements) {
+      if (el.getAttribute('data-original')?.toLowerCase() === originalWord.toLowerCase()) {
+        targetElement = el;
+        // 获取父段落的文本作为上下文
+        const parent = el.closest('p, div, li, td, span') || el.parentElement;
+        if (parent) {
+          contextSentence = parent.textContent.trim().slice(0, 300);
+        }
+        break;
+      }
+    }
+    
+    if (!contextSentence) {
+      showToast('无法获取上下文');
+      return;
+    }
+    
+    showToast('正在重新翻译...');
+    
+    const detectedLang = detectLanguage(originalWord);
+    const isNative = isNativeLanguage(detectedLang, config.nativeLanguage);
+    const sourceLang = isNative ? config.nativeLanguage : detectedLang;
+    const targetLang = isNative ? config.targetLanguage : config.nativeLanguage;
+    
+    try {
+      const prompt = `你是一个语言学习助手。请根据上下文语境翻译单词。
+
+## 上下文句子：
+"${contextSentence}"
+
+## 需要翻译的单词：
+${originalWord}
+
+## 规则：
+1. 根据上下文确定单词的正确含义和词性
+2. 翻译方向：${sourceLang} → ${targetLang}
+3. 翻译结果应符合上下文语境
+
+## 输出格式：
+返回单个 JSON 对象：
+{
+  "original": "原词",
+  "translation": "根据上下文的正确翻译",
+  "phonetic": "学习语言(${config.targetLanguage})的音标",
+  "difficulty": "CEFR等级"
+}
+
+只返回 JSON，不要其他内容。`;
+
+      const apiResponse = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+          action: 'apiRequest',
+          endpoint: config.apiEndpoint,
+          apiKey: config.apiKey,
+          body: {
+            model: config.modelName,
+            messages: [
+              { role: 'system', content: '你是一个专业的语言学习助手。始终返回有效的 JSON 格式。' },
+              { role: 'user', content: prompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 500
+          }
+        }, response => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (!response?.success) {
+            reject(new Error(response?.error || 'API request failed'));
+          } else {
+            resolve(response.data);
+          }
+        });
+      });
+
+      const content = apiResponse.choices?.[0]?.message?.content || '';
+      let result = null;
+      
+      try {
+        result = JSON.parse(content);
+      } catch {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+      }
+      
+      if (!result?.translation) {
+        showToast('翻译失败');
+        return;
+      }
+      
+      // 更新翻译缓存（先删除旧的，再写入新的）
+      const key = `${originalWord.toLowerCase()}:${sourceLang}:${targetLang}`;
+      if (wordCache.has(key)) {
+        wordCache.delete(key);
+      }
+      wordCache.set(key, {
+        translation: result.translation,
+        phonetic: result.phonetic || '',
+        difficulty: result.difficulty || 'B1'
+      });
+      await saveWordCache();
+      
+      // 清除旧的词典缓存并重新获取
+      const dictionaryType = config.dictionaryType || 'zh-en';
+      const dictCacheKey = `${originalWord.toLowerCase()}_${dictionaryType}`;
+      dictCache.delete(dictCacheKey);
+      // 同时清除持久化缓存
+      if (persistentDictCache) {
+        persistentDictCache.delete(dictCacheKey);
+        scheduleDictCachePersist();
+      }
+      // 后台重新获取词典数据
+      fetchDictionaryData(originalWord).catch(() => {});
+      
+      // 更新页面上所有相同单词的显示
+      document.querySelectorAll('.vocabmeld-translated').forEach(el => {
+        if (el.getAttribute('data-original')?.toLowerCase() === originalWord.toLowerCase()) {
+          el.setAttribute('data-translation', result.translation);
+          el.setAttribute('data-phonetic', result.phonetic || '');
+          el.setAttribute('data-difficulty', result.difficulty || 'B1');
+          
+          // 更新显示内容
+          const style = config.translationStyle || 'translation-original';
+          let innerHTML = '';
+          switch (style) {
+            case 'translation-only':
+              innerHTML = `<span class="vocabmeld-word">${result.translation}</span>`;
+              break;
+            case 'original-translation':
+              innerHTML = `<span class="vocabmeld-original">${originalWord}</span><span class="vocabmeld-word">(${result.translation})</span>`;
+              break;
+            default:
+              innerHTML = `<span class="vocabmeld-word">${result.translation}</span><span class="vocabmeld-original">(${originalWord})</span>`;
+          }
+          el.innerHTML = innerHTML;
+        }
+      });
+      
+      hideTooltip();
+      showToast(`已更新翻译: ${result.translation}`);
+      
+    } catch (error) {
+      console.error('[VocabMeld] Retranslate error:', error);
+      showToast('重新翻译失败');
+    }
   }
 
   async function processSpecificWords(targetWords) {
@@ -1570,63 +1734,96 @@ ${uncached.join(', ')}
     scheduleDictCachePersist();
   }
 
-  // Wiktionary 语言代码映射
-  const WIKTIONARY_LANG_MAP = {
-    'en': 'en',
-    'zh-CN': 'zh',
-    'zh-TW': 'zh',
-    'ja': 'ja',
-    'ko': 'ko',
-    'fr': 'fr',
-    'de': 'de',
-    'es': 'es'
-  };
-
-  // 从 Wiktionary Parse API 获取词典数据（支持所有语言）
-  async function fetchDictionaryData(word, lang = null) {
-    const targetLang = lang || config.targetLanguage || 'en';
-    const wikiLang = WIKTIONARY_LANG_MAP[targetLang] || 'en';
-    const cacheKey = `${word.toLowerCase()}_${wikiLang}`;
-    
-    // 1. 检查内存缓存
-    if (dictCache.has(cacheKey)) {
-      return dictCache.get(cacheKey);
-    }
-    
-    // 2. 检查持久化缓存
-    const persistedValue = await getDictCacheValue(cacheKey);
-    if (persistedValue !== undefined) {
-      dictCache.set(cacheKey, persistedValue);
-      return persistedValue;
-    }
-
+  // 从有道词典获取中英释义
+  async function fetchYoudaoData(word) {
     try {
-      // 使用 MediaWiki Parse API（支持所有语言）
-      const url = `https://${wikiLang}.wiktionary.org/w/api.php?action=parse&page=${encodeURIComponent(word)}&format=json&prop=text&origin=*`;
-      const response = await fetch(url);
-      if (!response.ok) return null;
+      const url = `https://dict.youdao.com/jsonapi?q=${encodeURIComponent(word)}&doctype=json`;
       
-      const data = await response.json();
-      if (data.error || !data.parse?.text?.['*']) {
-        dictCache.set(cacheKey, null);
-        await setDictCacheValue(cacheKey, null);
-        return null;
+      // 通过 background script 代理请求（避免 CORS）
+      const response = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ action: 'fetchProxy', url }, (res) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (!res?.success) {
+            reject(new Error(res?.error || 'Fetch failed'));
+          } else {
+            resolve(res.data);
+          }
+        });
+      });
+      
+      const ecData = response.ec?.word?.[0];
+      if (!ecData) return null;
+      
+      // 提取音标
+      const phonetic = ecData.usphone ? `/${ecData.usphone}/` : (ecData.ukphone ? `/${ecData.ukphone}/` : '');
+      
+      // 提取释义
+      const meanings = [];
+      const trs = ecData.trs || [];
+      
+      for (const tr of trs.slice(0, 3)) {
+        const defText = tr.tr?.[0]?.l?.i?.[0] || '';
+        if (defText) {
+          // 解析词性和释义（格式如 "n. 度，度数"）
+          const match = defText.match(/^([a-z]+\.)\s*(.+)$/i);
+          if (match) {
+            const pos = match[1];
+            const def = match[2];
+            // 合并相同词性
+            const existing = meanings.find(m => m.partOfSpeech === pos);
+            if (existing) {
+              if (existing.definitions.length < 3) {
+                existing.definitions.push(def);
+              }
+            } else {
+              meanings.push({ partOfSpeech: pos, definitions: [def] });
+            }
+          } else {
+            meanings.push({ partOfSpeech: '', definitions: [defText] });
+          }
+        }
       }
       
-      // 解析 HTML 内容
+      if (meanings.length === 0) return null;
+      
+      return { word, phonetic, meanings };
+    } catch (e) {
+      console.error('[VocabMeld] Youdao fetch error:', e);
+      return null;
+    }
+  }
+
+  // 从 Wiktionary 获取英英释义
+  async function fetchWiktionaryData(word) {
+    try {
+      const url = `https://en.wiktionary.org/w/api.php?action=parse&page=${encodeURIComponent(word)}&format=json&prop=text&origin=*`;
+      
+      // 通过 background script 代理请求（与中英词典保持一致）
+      const data = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ action: 'fetchProxy', url }, (res) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (!res?.success) {
+            reject(new Error(res?.error || 'Fetch failed'));
+          } else {
+            resolve(res.data);
+          }
+        });
+      });
+      
+      if (data.error || !data.parse?.text?.['*']) return null;
+      
       const htmlString = data.parse.text['*'];
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlString, 'text/html');
       const contentRoot = doc.querySelector('.mw-parser-output') || doc.body;
       
-      // 提取音标 (IPA)
       const phoneticEl = contentRoot.querySelector('.IPA');
       const phonetic = phoneticEl?.textContent?.trim() || '';
       
-      // 提取词性和定义
-      const validPOS = ['Noun', 'Verb', 'Adjective', 'Adverb', 'Interjection', 'Pronoun', 'Preposition', 'Conjunction',
-                        '名词', '动词', '形容词', '副词', '感叹词', '代词', '介词', '连词'];
-      const meaningsMap = new Map(); // 用于合并相同词性
+      const validPOS = ['Noun', 'Verb', 'Adjective', 'Adverb', 'Interjection', 'Pronoun', 'Preposition', 'Conjunction'];
+      const meaningsMap = new Map();
       const headers = contentRoot.querySelectorAll('h3, h4');
       
       for (const header of headers) {
@@ -1634,7 +1831,6 @@ ${uncached.join(', ')}
         const matchedPOS = validPOS.find(pos => headerText.includes(pos));
         if (!matchedPOS) continue;
         
-        // 查找定义列表
         let currentNode = header.parentNode?.classList?.contains('mw-heading') 
           ? header.parentNode : header;
         let definitionList = null;
@@ -1650,46 +1846,62 @@ ${uncached.join(', ')}
         
         if (definitionList) {
           const listItems = definitionList.querySelectorAll(':scope > li');
-          
           for (const li of Array.from(listItems).slice(0, 2)) {
             const cloneLi = li.cloneNode(true);
-            // 移除例句和引用
             cloneLi.querySelectorAll('.h-usage-example, .e-example, ul, dl, .reference, .citation').forEach(el => el.remove());
             const defText = cloneLi.textContent.replace(/<[^>]*>/g, '').trim().slice(0, 150);
             if (defText) {
-              // 合并到相同词性
               if (!meaningsMap.has(matchedPOS)) {
                 meaningsMap.set(matchedPOS, []);
               }
               const defs = meaningsMap.get(matchedPOS);
-              if (defs.length < 3) { // 每个词性最多3个定义
-                defs.push(defText);
-              }
+              if (defs.length < 3) defs.push(defText);
             }
           }
         }
       }
       
-      // 转换为数组，最多3个词性
       const meanings = [];
       for (const [pos, defs] of meaningsMap) {
         if (meanings.length >= 3) break;
-        if (defs.length > 0) {
-          meanings.push({ partOfSpeech: pos, definitions: defs });
-        }
+        if (defs.length > 0) meanings.push({ partOfSpeech: pos, definitions: defs });
       }
       
-      if (meanings.length === 0) {
-        dictCache.set(cacheKey, null);
-        await setDictCacheValue(cacheKey, null);
-        return null;
-      }
+      if (meanings.length === 0) return null;
+      return { word, phonetic, meanings };
+    } catch (e) {
+      console.error('[VocabMeld] Wiktionary fetch error:', e);
+      return null;
+    }
+  }
+
+  // 获取词典数据（根据配置选择 API）
+  async function fetchDictionaryData(word, lang = null) {
+    const dictionaryType = config.dictionaryType || 'en-en';
+    const cacheKey = `${word.toLowerCase()}_${dictionaryType}`;
+    
+    // 1. 检查内存缓存
+    if (dictCache.has(cacheKey)) {
+      return dictCache.get(cacheKey);
+    }
+    
+    // 2. 检查持久化缓存
+    const persistedValue = await getDictCacheValue(cacheKey);
+    if (persistedValue !== undefined) {
+      dictCache.set(cacheKey, persistedValue);
+      return persistedValue;
+    }
+
+    try {
+      let result = null;
       
-      const result = {
-        word: word,
-        phonetic: phonetic,
-        meanings: meanings
-      };
+      if (dictionaryType === 'zh-en') {
+        // 中英释义：使用有道词典
+        result = await fetchYoudaoData(word);
+      } else {
+        // 英英释义：使用 Wiktionary
+        result = await fetchWiktionaryData(word);
+      }
       
       dictCache.set(cacheKey, result);
       await setDictCacheValue(cacheKey, result);
@@ -1697,33 +1909,26 @@ ${uncached.join(', ')}
     } catch (e) {
       console.error('[VocabMeld] Dictionary fetch error:', e);
       dictCache.set(cacheKey, null);
-      setDictCacheValue(cacheKey, null); // 异步保存，不等待
+      setDictCacheValue(cacheKey, null);
       return null;
     }
   }
 
   // 预加载词典数据（替换完成后后台调用）
   function prefetchDictionaryData(words) {
-    if (config.showDictionary === false) return;
-    
     const targetLang = config.targetLanguage || 'en';
+    const dictionaryType = config.dictionaryType || 'en-en';
     
     for (const word of words) {
       const wordLang = detectLanguage(word);
-      // 只预加载目标语言的单词
-      const isTargetLang = (wordLang === 'en' && targetLang === 'en') ||
-                           (wordLang === 'zh' && (targetLang === 'zh-CN' || targetLang === 'zh-TW')) ||
-                           (wordLang === 'ja' && targetLang === 'ja') ||
-                           (wordLang === 'ko' && targetLang === 'ko') ||
-                           (wordLang === 'en' && ['fr', 'de', 'es'].includes(targetLang));
+      // 只预加载英文单词（词典主要支持英文）
+      if (wordLang !== 'en') continue;
       
-      if (!isTargetLang) continue;
-      
-      const cacheKey = `${word.toLowerCase()}_${targetLang}`;
+      const cacheKey = `${word.toLowerCase()}_${dictionaryType}`;
       if (dictCache.has(cacheKey)) continue;
       
       // 后台静默加载，不阻塞
-      fetchDictionaryData(word, targetLang).catch(() => {});
+      fetchDictionaryData(word).catch(() => {});
     }
   }
 
@@ -1737,7 +1942,10 @@ ${uncached.join(', ')}
     let html = '';
     for (const meaning of dictData.meanings) {
       html += `<div class="vocabmeld-dict-entry">`;
-      html += `<span class="vocabmeld-dict-pos">${meaning.partOfSpeech}</span>`;
+      // 只有当词性非空时才显示词性标签
+      if (meaning.partOfSpeech) {
+        html += `<span class="vocabmeld-dict-pos">${meaning.partOfSpeech}</span>`;
+      }
       html += `<ul class="vocabmeld-dict-defs">`;
       for (const def of meaning.definitions) {
         html += `<li>${def}</li>`;
@@ -1788,7 +1996,7 @@ ${uncached.join(', ')}
       </div>
       ${phonetic && config.showPhonetic ? `<div class="vocabmeld-tooltip-phonetic">${phonetic}</div>` : ''}
       <div class="vocabmeld-tooltip-original">原文: ${original}</div>
-      ${config.showDictionary !== false ? `<div class="vocabmeld-tooltip-dict"></div>` : ''}
+      <div class="vocabmeld-tooltip-dict"></div>
       <div class="vocabmeld-tooltip-actions">
         <button class="vocabmeld-tooltip-btn vocabmeld-btn-speak" data-original="${original}" data-translation="${translation}" title="发音">
           <svg viewBox="0 0 24 24" width="16" height="16">
@@ -1808,6 +2016,11 @@ ${uncached.join(', ')}
             <path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
           </svg>
         </button>
+        <button class="vocabmeld-tooltip-btn vocabmeld-btn-retranslate" data-original="${original}" title="根据上下文重新翻译">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="currentColor" d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+          </svg>
+        </button>
       </div>
     `;
 
@@ -1817,32 +2030,31 @@ ${uncached.join(', ')}
     tooltip.style.display = 'block';
     
     // 显示词典数据（优先从缓存获取）
-    if (config.showDictionary !== false) {
-      const dictContainer = tooltip.querySelector('.vocabmeld-tooltip-dict');
-      if (dictContainer) {
-        if (dictWord) {
-          const cacheKey = `${dictWord.toLowerCase()}_${targetLang}`;
-          const cachedData = dictCache.get(cacheKey);
-          if (cachedData) {
-            // 缓存命中，直接显示
-            updateTooltipDictionary(cachedData);
-          } else {
-            // 缓存未命中，显示加载中并异步获取
-            dictContainer.innerHTML = '<div class="vocabmeld-dict-loading">加载词典...</div>';
-            fetchDictionaryData(dictWord, targetLang).then(dictData => {
-              if (tooltip.style.display !== 'none') {
-                if (dictData) {
-                  updateTooltipDictionary(dictData);
-                } else {
-                  dictContainer.innerHTML = '<div class="vocabmeld-dict-empty">暂无词典数据</div>';
-                }
-              }
-            });
-          }
+    const dictionaryType = config.dictionaryType || 'en-en';
+    const dictContainer = tooltip.querySelector('.vocabmeld-tooltip-dict');
+    if (dictContainer) {
+      if (dictWord) {
+        const cacheKey = `${dictWord.toLowerCase()}_${dictionaryType}`;
+        const cachedData = dictCache.get(cacheKey);
+        if (cachedData) {
+          // 缓存命中，直接显示
+          updateTooltipDictionary(cachedData);
         } else {
-          // 非目标语言单词
-          dictContainer.innerHTML = '<div class="vocabmeld-dict-empty">暂无词典数据</div>';
+          // 缓存未命中，显示加载中并异步获取
+          dictContainer.innerHTML = '<div class="vocabmeld-dict-loading">加载词典...</div>';
+          fetchDictionaryData(dictWord).then(dictData => {
+            if (tooltip.style.display !== 'none') {
+              if (dictData) {
+                updateTooltipDictionary(dictData);
+              } else {
+                dictContainer.innerHTML = '<div class="vocabmeld-dict-empty">暂无词典数据</div>';
+              }
+            }
+          });
         }
+      } else {
+        // 非英文单词
+        dictContainer.innerHTML = '<div class="vocabmeld-dict-empty">暂无词典数据</div>';
       }
     }
   }
@@ -1995,6 +2207,16 @@ ${uncached.join(', ')}
         restoreAllSameWord(original);
         hideTooltip();
         showToast(`"${original}" 已标记为已学会`);
+        return;
+      }
+      
+      // 重新翻译按钮
+      const retranslateBtn = e.target.closest('.vocabmeld-btn-retranslate');
+      if (retranslateBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const original = retranslateBtn.getAttribute('data-original');
+        retranslateWithContext(original);
         return;
       }
     });

@@ -312,23 +312,32 @@
 
           <div class="toggle-item">
             <div class="toggle-info">
-              <span class="toggle-title">显示词典解释</span>
-              <span class="toggle-desc">在悬停提示中显示单词的词典释义</span>
-            </div>
-            <label class="toggle-switch">
-              <input type="checkbox" id="showDictionary" checked>
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-
-          <div class="toggle-item">
-            <div class="toggle-info">
               <span class="toggle-title">选中添加到记忆</span>
               <span class="toggle-desc">选中文本时显示"添加到需记忆"按钮</span>
             </div>
             <label class="toggle-switch">
               <input type="checkbox" id="showAddMemorize" checked>
               <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>词典类型</label>
+          <div class="intensity-selector">
+            <label class="intensity-option">
+              <input type="radio" name="dictionaryType" value="zh-en" checked>
+              <span class="intensity-card">
+                <span class="intensity-icon">🀄</span>
+                <span class="intensity-name">中英释义</span>
+              </span>
+            </label>
+            <label class="intensity-option">
+              <input type="radio" name="dictionaryType" value="en-en">
+              <span class="intensity-card">
+                <span class="intensity-icon">🔤</span>
+                <span class="intensity-name">英英释义</span>
+              </span>
             </label>
           </div>
         </div>

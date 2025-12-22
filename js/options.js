@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 行为设置
     autoProcess: document.getElementById('autoProcess'),
     showPhonetic: document.getElementById('showPhonetic'),
-    showDictionary: document.getElementById('showDictionary'),
+    dictionaryTypeRadios: document.querySelectorAll('input[name="dictionaryType"]'),
     showAddMemorize: document.getElementById('showAddMemorize'),
     cacheMaxSizeRadios: document.querySelectorAll('input[name="cacheMaxSize"]'),
     translationStyleRadios: document.querySelectorAll('input[name="translationStyle"]'),
@@ -400,7 +400,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 行为设置
       elements.autoProcess.checked = result.autoProcess ?? false;
       elements.showPhonetic.checked = result.showPhonetic ?? true;
-      elements.showDictionary.checked = result.showDictionary ?? true;
+      const dictionaryType = result.dictionaryType || 'zh-en';
+      elements.dictionaryTypeRadios.forEach(radio => {
+        radio.checked = radio.value === dictionaryType;
+      });
       elements.showAddMemorize.checked = result.showAddMemorize ?? true;
       
       const cacheMaxSize = result.cacheMaxSize || 2000;
@@ -702,7 +705,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       processMode: document.querySelector('input[name="processMode"]:checked')?.value || 'both',
       autoProcess: elements.autoProcess.checked,
       showPhonetic: elements.showPhonetic.checked,
-      showDictionary: elements.showDictionary.checked,
+      dictionaryType: document.querySelector('input[name="dictionaryType"]:checked')?.value || 'zh-en',
       showAddMemorize: elements.showAddMemorize.checked,
       cacheMaxSize: parseInt(document.querySelector('input[name="cacheMaxSize"]:checked').value),
       translationStyle: document.querySelector('input[name="translationStyle"]:checked').value,
@@ -789,12 +792,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const checkboxes = [
       elements.autoProcess,
       elements.showPhonetic,
-      elements.showDictionary,
       elements.showAddMemorize
     ];
 
     checkboxes.forEach(checkbox => {
       checkbox.addEventListener('change', () => debouncedSave(200));
+    });
+    
+    // 词典类型选择
+    elements.dictionaryTypeRadios.forEach(radio => {
+      radio.addEventListener('change', () => debouncedSave(200));
     });
 
     // 发音设置
@@ -1107,7 +1114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           intensity: syncData.intensity,
           autoProcess: syncData.autoProcess,
           showPhonetic: syncData.showPhonetic,
-          showDictionary: syncData.showDictionary,
+          dictionaryType: syncData.dictionaryType,
           showAddMemorize: syncData.showAddMemorize,
           cacheMaxSize: syncData.cacheMaxSize,
           translationStyle: syncData.translationStyle,
@@ -1188,7 +1195,16 @@ document.addEventListener('DOMContentLoaded', async () => {
           Object.assign(syncUpdates, data.stats);
         }
         if (data.cache) {
-          localUpdates.vocabmeld_word_cache = data.cache;
+          // 导入时去重
+          const seenKeys = new Set();
+          const deduplicatedCache = [];
+          for (const item of data.cache) {
+            if (item.key && !seenKeys.has(item.key)) {
+              seenKeys.add(item.key);
+              deduplicatedCache.push(item);
+            }
+          }
+          localUpdates.vocabmeld_word_cache = deduplicatedCache;
         }
 
         // 保存数据
