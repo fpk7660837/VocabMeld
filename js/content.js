@@ -1212,8 +1212,8 @@ ${uncached.join(', ')}
   }
 
   // ============ 页面处理 ============
-  const MAX_CONCURRENT = 3; // 最大并发请求数
-  const PROCESS_DELAY_MS = 50; // 批次间延迟，避免阻塞主线程
+  const MAX_SEGMENTS_PER_REQUEST = 5; // 每个API请求处理的最大段落数
+  const REQUEST_INTERVAL_MS = 1000; // API请求间隔（毫秒），避免触发速率限制
 
   // 使用 IntersectionObserver 实现懒加载
   function setupIntersectionObserver() {
@@ -1297,14 +1297,14 @@ ${uncached.join(', ')}
         }
       }
 
-      // 分批处理
-      for (let i = 0; i < segments.length; i += MAX_CONCURRENT) {
-        const batch = segments.slice(i, i + MAX_CONCURRENT);
-        await Promise.all(batch.map(segment => processSegmentAsync(segment, whitelistWords)));
+      // 合并多个段落为一个请求，减少API调用次数
+      for (let i = 0; i < segments.length; i += MAX_SEGMENTS_PER_REQUEST) {
+        const batch = segments.slice(i, i + MAX_SEGMENTS_PER_REQUEST);
+        await processBatchSegments(batch, whitelistWords);
         
-        // 添加延迟，避免阻塞主线程
-        if (i + MAX_CONCURRENT < segments.length) {
-          await new Promise(resolve => setTimeout(resolve, PROCESS_DELAY_MS));
+        // 添加请求间隔，避免触发API速率限制
+        if (i + MAX_SEGMENTS_PER_REQUEST < segments.length) {
+          await new Promise(resolve => setTimeout(resolve, REQUEST_INTERVAL_MS));
         }
       }
     } finally {
@@ -1317,35 +1317,54 @@ ${uncached.join(', ')}
     }
   }, 100);
 
-  // 异步处理单个段落
-  async function processSegmentAsync(segment, whitelistWords) {
+  // 批量处理多个段落（合并为一个API请求）
+  async function processBatchSegments(segments, whitelistWords) {
+    if (segments.length === 0) return;
+    
+    // 合并所有段落的文本，用分隔符隔开
+    const combinedText = segments.map(s => s.filteredText).join('\n\n---\n\n');
+    
     try {
-      const result = await translateText(segment.filteredText);
+      const result = await translateText(combinedText);
       
-      // 先应用缓存结果
-      if (result.immediate?.length) {
-        const filtered = result.immediate.filter(r => !whitelistWords.has(r.original.toLowerCase()));
-        applyReplacements(segment.element, filtered);
-        processedFingerprints.add(segment.fingerprint);
+      // 将翻译结果分配给各个段落
+      const allReplacements = [...(result.immediate || [])];
+      
+      // 为每个段落应用匹配的翻译结果
+      for (const segment of segments) {
+        const segmentText = segment.text.toLowerCase();
+        const matchingReplacements = allReplacements.filter(r => 
+          segmentText.includes(r.original.toLowerCase()) &&
+          !whitelistWords.has(r.original.toLowerCase())
+        );
+        
+        if (matchingReplacements.length > 0) {
+          applyReplacements(segment.element, matchingReplacements);
+          processedFingerprints.add(segment.fingerprint);
+        }
       }
       
-      // 异步结果
+      // 处理异步结果
       if (result.async) {
         result.async.then(asyncReplacements => {
           if (asyncReplacements?.length) {
-            const alreadyReplaced = new Set();
-            segment.element.querySelectorAll('.vocabmeld-translated').forEach(el => {
-              const original = el.getAttribute('data-original');
-              if (original) alreadyReplaced.add(original.toLowerCase());
-            });
-            
-            const filtered = asyncReplacements.filter(r => 
-              !whitelistWords.has(r.original.toLowerCase()) &&
-              !alreadyReplaced.has(r.original.toLowerCase())
-            );
-            
-            if (filtered.length > 0) {
-              applyReplacements(segment.element, filtered);
+            for (const segment of segments) {
+              const segmentText = segment.text.toLowerCase();
+              const alreadyReplaced = new Set();
+              segment.element.querySelectorAll('.vocabmeld-translated').forEach(el => {
+                const original = el.getAttribute('data-original');
+                if (original) alreadyReplaced.add(original.toLowerCase());
+              });
+              
+              const matchingReplacements = asyncReplacements.filter(r => 
+                segmentText.includes(r.original.toLowerCase()) &&
+                !whitelistWords.has(r.original.toLowerCase()) &&
+                !alreadyReplaced.has(r.original.toLowerCase())
+              );
+              
+              if (matchingReplacements.length > 0) {
+                applyReplacements(segment.element, matchingReplacements);
+              }
             }
           }
         }).catch(error => {
@@ -1353,7 +1372,7 @@ ${uncached.join(', ')}
         });
       }
     } catch (e) {
-      console.error('[VocabMeld] Segment error:', e);
+      console.error('[VocabMeld] Batch processing error:', e);
     }
   }
 
@@ -1517,7 +1536,7 @@ ${uncached.join(', ')}
       // 延迟隐藏，给用户时间移动到 tooltip 上
       tooltipHideTimeout = setTimeout(() => {
         if (tooltip) tooltip.style.display = 'none';
-      }, 150);
+      }, 200);
     }
   }
   
