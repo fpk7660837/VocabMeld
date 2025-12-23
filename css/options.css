@@ -1120,8 +1120,15 @@ input:checked + .toggle-slider:before {
 }
 
 .site-mode-icon {
-  font-size: 24px;
   flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  color: var(--primary);
+}
+
+.site-mode-icon svg {
+  width: 24px;
+  height: 24px;
 }
 
 .site-mode-info {
