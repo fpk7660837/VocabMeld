@@ -10,8 +10,17 @@
 </p>
 
 <p align="center">
+  <a href="README_EN.md">English</a> | 中文
+</p>
+
+<p align="center">
   <img src="assets/preview.png" alt="VocabMeld Preview" width="100%">
 </p>
+
+---
+
+>
+> 为保证代码质量，本项目完全使用 **Claude Opus 4.5** 开发，价格非常昂贵。如果这个项目对你有帮助，欢迎在页面底部扫码打赏支持，你的支持是我继续更新的动力！⭐
 
 ---
 
@@ -110,7 +119,7 @@
 
 ## ☕ 打赏
 
-万水千山总是情，一块几块都是情。本软件完全开源，用爱发电。
+本项目完全开源，如果对你有帮助，欢迎打赏支持！
 
 <p align="center">
   <img src="assets/wechat.jpg" alt="微信打赏" width="300">
