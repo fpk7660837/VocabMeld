@@ -5,7 +5,6 @@
 document.addEventListener('DOMContentLoaded', async () => {
   // DOM 元素
   const enableToggle = document.getElementById('enableToggle');
-  const toggleLabel = document.getElementById('toggleLabel');
   const totalWords = document.getElementById('totalWords');
   const todayWords = document.getElementById('todayWords');
   const learnedCount = document.getElementById('learnedCount');
@@ -14,10 +13,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hitRate = document.getElementById('hitRate');
   const processBtn = document.getElementById('processBtn');
   const settingsBtn = document.getElementById('settingsBtn');
-  const themeToggle = document.getElementById('themeToggle');
+  const themeToggleBtn = document.getElementById('themeToggleBtn');
   const excludeSiteBtn = document.getElementById('excludeSiteBtn');
   const excludeSiteText = document.getElementById('excludeSiteText');
-  const siteModeHint = document.getElementById('siteModeHint');
+  const siteModeText = document.getElementById('siteModeText');
   const shortcutKey = document.getElementById('shortcutKey');
 
   // 当前快捷键
@@ -66,11 +65,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.storage.sync.get(['theme', 'colorTheme', 'customTheme'], (result) => {
     const theme = result.theme || 'dark';
     document.documentElement.setAttribute('data-theme', theme);
-    themeToggle.checked = theme === 'light';
+    updateThemeIcon(theme);
     
     // 应用配色主题
     applyColorTheme(result.colorTheme || 'default', result.customTheme);
   });
+  
+  // 更新主题图标
+  function updateThemeIcon(theme) {
+    const iconDark = themeToggleBtn.querySelector('.icon-theme-dark');
+    const iconLight = themeToggleBtn.querySelector('.icon-theme-light');
+    if (theme === 'light') {
+      iconDark.style.display = 'none';
+      iconLight.style.display = '';
+    } else {
+      iconDark.style.display = '';
+      iconLight.style.display = 'none';
+    }
+  }
 
   // 加载配置和统计
   async function loadData() {
@@ -78,8 +90,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.storage.sync.get('enabled', (result) => {
       const enabled = result.enabled !== false;
       enableToggle.checked = enabled;
-      toggleLabel.textContent = enabled ? '已启用' : '已禁用';
-      toggleLabel.className = `toggle-label ${enabled ? 'enabled' : 'disabled'}`;
     });
 
     // 加载统计数据
@@ -119,9 +129,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   enableToggle.addEventListener('change', () => {
     const enabled = enableToggle.checked;
     chrome.storage.sync.set({ enabled }, () => {
-      toggleLabel.textContent = enabled ? '已启用' : '已禁用';
-      toggleLabel.className = `toggle-label ${enabled ? 'enabled' : 'disabled'}`;
-      
       // 通知内容脚本
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs[0]) {
@@ -177,10 +184,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // 主题切换
-  themeToggle.addEventListener('change', () => {
-    const theme = themeToggle.checked ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-    chrome.storage.sync.set({ theme });
+  themeToggleBtn.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    updateThemeIcon(newTheme);
+    chrome.storage.sync.set({ theme: newTheme });
   });
 
   // 当前站点模式
@@ -254,7 +263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.storage.sync.get(['siteMode', 'excludedSites', 'allowedSites'], (result) => {
         currentSiteMode = result.siteMode || 'all';
         // 更新模式提示
-        siteModeHint.textContent = currentSiteMode === 'all' ? '所有网站' : '仅指定';
+        siteModeText.textContent = '运行模式：' + (currentSiteMode === 'all' ? '所有网站' : '仅指定');
         
         const listKey = currentSiteMode === 'all' ? 'excludedSites' : 'allowedSites';
         const sites = result[listKey] || [];
@@ -277,7 +286,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (areaName === 'sync') {
       if (changes.theme) {
         document.documentElement.setAttribute('data-theme', changes.theme.newValue);
-        themeToggle.checked = changes.theme.newValue === 'light';
+        updateThemeIcon(changes.theme.newValue);
       }
       if (changes.colorTheme || changes.customTheme) {
         chrome.storage.sync.get(['colorTheme', 'customTheme'], (result) => {
