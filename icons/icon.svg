@@ -1,36 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="_layer_1" data-name="layer 1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#6366f1"/>
-      <stop offset="50%" style="stop-color:#8b5cf6"/>
-      <stop offset="100%" style="stop-color:#a855f7"/>
+    <style>
+      .st0 { fill: url(#gradient_3); }
+      .st1 { fill: url(#gradient_1); }
+    </style>
+    <linearGradient id="gradient_1" x1="-887.54" y1="601.04" x2="-886.54" y2="600.04" gradientTransform="translate(106509 72129) scale(120 -120)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset=".5" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#a855f7"/>
     </linearGradient>
-    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#fef3c7"/>
-      <stop offset="100%" style="stop-color:#fcd34d"/>
+    <linearGradient id="gradient_3" x1="20.9" y1="64" x2="107.1" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#fcd34d"/>
     </linearGradient>
   </defs>
-  <!-- Background circle -->
-  <circle cx="64" cy="64" r="60" fill="url(#bgGrad)"/>
-  <!-- Inner glow -->
-  <circle cx="64" cy="64" r="52" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
-  <!-- V letter stylized -->
-  <path d="M32 35 L52 85 L64 60 L76 85 L96 35" 
-        fill="none" 
-        stroke="url(#textGrad)" 
-        stroke-width="8" 
-        stroke-linecap="round" 
-        stroke-linejoin="round"/>
-  <!-- M letter below V -->
-  <path d="M36 95 L36 75 L52 88 L68 75 L68 95" 
-        fill="none" 
-        stroke="url(#textGrad)" 
-        stroke-width="5" 
-        stroke-linecap="round" 
-        stroke-linejoin="round"
-        transform="translate(12, -5)"/>
-  <!-- Sparkle effects -->
-  <circle cx="98" cy="30" r="3" fill="#fef3c7" opacity="0.8"/>
-  <circle cx="30" cy="50" r="2" fill="#fef3c7" opacity="0.6"/>
-  <circle cx="100" cy="70" r="2.5" fill="#fef3c7" opacity="0.7"/>
+  <circle class="st1" cx="64" cy="64" r="60"/>
+  <path class="st0" d="M100.82,50.48l-13.93,20.44,3.17,20.89h17.04l-6.28-41.33ZM20.9,91.81h17.04l3.17-20.89-13.93-20.44-6.28,41.33ZM104.38,35.87h-21.1l-1.12,1.48h0s-18.38,24.38-18.38,24.38l-1.13,1.5-.5-.73-17.73-26.01h0s-.42-.62-.42-.62h-20.39l3.16,4.63h0s13.93,20.44,13.93,20.44l11.25,16.5,9.79,14.36.22.32.24-.32,11.59-15.38,11.9-15.79h0s14.18-18.82,14.18-18.82l4.49-5.96Z"/>
 </svg>
