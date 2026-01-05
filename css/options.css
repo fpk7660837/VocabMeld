@@ -196,6 +196,7 @@ body {
 .form-group input[type="text"],
 .form-group input[type="url"],
 .form-group input[type="password"],
+.form-group input[type="number"],
 .form-group select,
 .form-group textarea {
   width: 100%;
@@ -208,7 +209,10 @@ body {
   transition: var(--transition);
 }
 
-.form-group input:focus,
+.form-group input[type="text"]:focus,
+.form-group input[type="url"]:focus,
+.form-group input[type="password"]:focus,
+.form-group input[type="number"]:focus,
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
@@ -2444,4 +2448,335 @@ input:checked + .toggle-slider:before {
 .color-picker-wrapper input[type="color"]:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* ============ API 节点管理 ============ */
+.endpoints-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.endpoints-header label {
+  margin-bottom: 0;
+}
+
+.endpoints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100px;
+}
+
+.endpoint-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+  cursor: default;
+}
+
+.endpoint-card:hover {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, var(--bg-secondary));
+}
+
+.endpoint-card.dragging {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.endpoint-card.disabled {
+  opacity: 0.6;
+}
+
+.endpoint-card.disabled .endpoint-name {
+  color: var(--text-muted);
+}
+
+.endpoint-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: grab;
+  padding: 4px;
+}
+
+.endpoint-drag-handle:active {
+  cursor: grabbing;
+}
+
+.endpoint-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.endpoint-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.endpoint-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.endpoint-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.endpoint-status.active {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success);
+}
+
+.endpoint-status.inactive {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.endpoint-usage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.usage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+}
+
+.usage-badge svg {
+  flex-shrink: 0;
+}
+
+.endpoint-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.endpoint-actions .btn-icon {
+  width: 32px;
+  height: 32px;
+}
+
+/* 编辑按钮 hover 效果 - 半透明背景 */
+.endpoint-actions .endpoint-edit:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: transparent;
+  color: var(--primary);
+}
+
+/* 启用按钮 enabled 状态 - 实心背景更突出 */
+.endpoint-actions .endpoint-toggle.enabled {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.endpoint-actions .endpoint-toggle.enabled:hover {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+  color: white;
+}
+
+.endpoint-actions .endpoint-toggle.disabled {
+  color: var(--text-muted);
+}
+
+.endpoint-actions .endpoint-toggle.disabled:hover {
+  background: rgba(100, 116, 139, 0.15);
+  color: var(--text-secondary);
+}
+
+/* ============ 全局提示 ============ */
+.global-toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  padding: 12px 24px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  color: var(--text-primary);
+  font-size: 14px;
+  z-index: 2000;
+  opacity: 0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.global-toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.global-toast.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.global-toast.success {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+/* ============ 弹窗样式 ============ */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal.show {
+  display: flex;
+}
+
+.modal-content {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: modal-in 0.2s ease-out;
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+
+.modal-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.modal-body .form-group {
+  margin-bottom: 16px;
+}
+
+.modal-body .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.modal-body .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.modal-body .form-row .form-group {
+  margin-bottom: 0;
+}
+
+.modal-body .form-actions {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* Toggle inline 样式 */
+.toggle-inline {
+  margin-top: 8px;
+}
+
+/* Toggle switch 小号版本 */
+.toggle-switch.toggle-sm {
+  width: 40px;
+  height: 22px;
+}
+
+.toggle-switch.toggle-sm .toggle-slider:before {
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+}
+
+.toggle-switch.toggle-sm input:checked + .toggle-slider:before {
+  transform: translateX(18px);
 }

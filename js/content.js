@@ -964,10 +964,7 @@ ${filteredText}
         const apiResponse = await new Promise((resolve, reject) => {
           chrome.runtime.sendMessage({
             action: 'apiRequest',
-            endpoint: config.apiEndpoint,
-            apiKey: config.apiKey,
             body: {
-              model: config.modelName,
               messages: [
                 { role: 'system', content: '你是一个专业的语言学习助手。始终返回有效的 JSON 格式。' },
                 { role: 'user', content: prompt }
@@ -1158,10 +1155,7 @@ ${uncached.join(', ')}
         const apiResponse = await new Promise((resolve, reject) => {
           chrome.runtime.sendMessage({
             action: 'apiRequest',
-            endpoint: config.apiEndpoint,
-            apiKey: config.apiKey,
             body: {
-              model: config.modelName,
               messages: [
                 { role: 'system', content: '你是一个专业的语言学习助手。始终返回有效的 JSON 格式。' },
                 { role: 'user', content: prompt }
@@ -1309,10 +1303,7 @@ ${originalWord}
       const apiResponse = await new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
           action: 'apiRequest',
-          endpoint: config.apiEndpoint,
-          apiKey: config.apiKey,
           body: {
-            model: config.modelName,
             messages: [
               { role: 'system', content: '你是一个专业的语言学习助手。始终返回有效的 JSON 格式。' },
               { role: 'user', content: prompt }

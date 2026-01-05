@@ -25,7 +25,7 @@
 
 ## ✨ Key Features
 
-- **Multi-LLM Support** — Compatible with OpenAI, DeepSeek, Moonshot, Groq, Ollama and more
+- **Multi-LLM Support** — Compatible with OpenAI, DeepSeek, Qwen, Groq, Ollama and more
 - **CEFR Difficulty Range** — Filter any A1-C2 band to skip words that are too easy or too hard
 - **Smart Caching** — LRU cache (up to 10,000 words), millisecond response on revisits
 - **Bidirectional Translation** — Auto-detect page language, smart translation direction
@@ -50,11 +50,11 @@
 
 ### Supported API Services
 
-| Provider | Endpoint | Recommended Model |
-|----------|----------|-------------------|
+| Provider | Endpoint | Example Model |
+|----------|----------|---------------|
 | DeepSeek | `https://api.deepseek.com/chat/completions` | deepseek-chat |
 | OpenAI | `https://api.openai.com/v1/chat/completions` | gpt-4o-mini |
-| Moonshot | `https://api.moonshot.cn/v1/chat/completions` | moonshot-v1-8k |
+| Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` | qwen-plus |
 | Groq | `https://api.groq.com/openai/v1/chat/completions` | llama-3.1-8b-instant |
 | Ollama | `http://localhost:11434/v1/chat/completions` | qwen2.5:7b |
 

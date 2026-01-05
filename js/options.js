@@ -3,18 +3,24 @@
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 默认 API 配置
-  const DEFAULT_API_CONFIGS = {
-    'OpenAI': { endpoint: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o-mini' },
-    'DeepSeek': { endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '', model: 'deepseek-chat' },
-    'Moonshot': { endpoint: 'https://api.moonshot.cn/v1/chat/completions', apiKey: '', model: 'moonshot-v1-8k' },
-    'Groq': { endpoint: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '', model: 'llama-3.1-8b-instant' },
-    'Ollama': { endpoint: 'http://localhost:11434/v1/chat/completions', apiKey: '', model: 'qwen2.5:7b' }
-  };
+  // 默认 API 节点配置
+  const DEFAULT_API_ENDPOINTS = [
+    { id: 'deepseek', name: 'DeepSeek', endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '', model: 'deepseek-chat', qpm: 60, enabled: true },
+    { id: 'openai', name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o-mini', qpm: 60, enabled: false },
+    { id: 'moonshot', name: 'Moonshot', endpoint: 'https://api.moonshot.cn/v1/chat/completions', apiKey: '', model: 'moonshot-v1-8k', qpm: 10, enabled: false },
+    { id: 'groq', name: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '', model: 'llama-3.1-8b-instant', qpm: 30, enabled: false },
+    { id: 'ollama', name: 'Ollama', endpoint: 'http://localhost:11434/v1/chat/completions', apiKey: '', model: 'qwen2.5:7b', qpm: 0, enabled: false }
+  ];
 
-  // 当前配置状态
-  let apiConfigs = {};
-  let currentConfigName = '';
+  // 生成唯一 ID
+  function generateId() {
+    return 'ep_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  }
+
+  // 当前节点配置状态
+  let apiEndpoints = [];
+  let editingEndpointId = null;
+  let draggedItem = null;
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
@@ -51,18 +57,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     navItems: document.querySelectorAll('.nav-item'),
     sections: document.querySelectorAll('.settings-section'),
 
-    // API 配置
-    apiConfigSelect: document.getElementById('apiConfigSelect'),
-    newConfigBtn: document.getElementById('newConfigBtn'),
-    saveConfigBtn: document.getElementById('saveConfigBtn'),
-    deleteConfigBtn: document.getElementById('deleteConfigBtn'),
-    configName: document.getElementById('configName'),
-    apiEndpoint: document.getElementById('apiEndpoint'),
-    apiKey: document.getElementById('apiKey'),
-    modelName: document.getElementById('modelName'),
-    toggleApiKey: document.getElementById('toggleApiKey'),
-    testConnectionBtn: document.getElementById('testConnectionBtn'),
-    testResult: document.getElementById('testResult'),
+    // API 节点列表
+    endpointsList: document.getElementById('endpointsList'),
+    addEndpointBtn: document.getElementById('addEndpointBtn'),
+
+    // 节点编辑弹窗
+    endpointModal: document.getElementById('endpointModal'),
+    endpointModalTitle: document.getElementById('endpointModalTitle'),
+    endpointForm: document.getElementById('endpointForm'),
+    endpointName: document.getElementById('endpointName'),
+    endpointUrl: document.getElementById('endpointUrl'),
+    endpointApiKey: document.getElementById('endpointApiKey'),
+    toggleEndpointApiKey: document.getElementById('toggleEndpointApiKey'),
+    endpointModel: document.getElementById('endpointModel'),
+    endpointQpm: document.getElementById('endpointQpm'),
+    testEndpointBtn: document.getElementById('testEndpointBtn'),
+    testEndpointResult: document.getElementById('testEndpointResult'),
+    saveEndpointBtn: document.getElementById('saveEndpointBtn'),
+    cancelEndpointBtn: document.getElementById('cancelEndpointBtn'),
+    cancelEndpointBtn2: document.getElementById('cancelEndpointBtn2'),
+    deleteEndpointBtn: document.getElementById('deleteEndpointBtn'),
 
     // 学习偏好
     nativeLanguage: document.getElementById('nativeLanguage'),
@@ -685,166 +699,420 @@ document.addEventListener('DOMContentLoaded', async () => {
     return prefixMap[langCode] || langCode.split('-')[0];
   }
 
-  // 加载 API 配置列表
-  function loadApiConfigs(callback) {
-    chrome.storage.sync.get(['apiConfigs', 'currentApiConfig'], (result) => {
-      // 如果没有配置，使用默认配置
-      apiConfigs = result.apiConfigs || { ...DEFAULT_API_CONFIGS };
-      currentConfigName = result.currentApiConfig || Object.keys(apiConfigs)[0] || '';
-      
-      updateConfigSelect();
-      
+  // 加载 API 节点列表
+  function loadApiEndpoints(callback) {
+    chrome.storage.sync.get(['apiEndpoints', 'apiConfigs', 'currentApiConfig', 'apiEndpoint', 'apiKey', 'modelName'], (result) => {
+      let needsSave = false;
+
+      // 如果已有新版节点配置，直接使用
+      if (result.apiEndpoints && result.apiEndpoints.length > 0) {
+        apiEndpoints = result.apiEndpoints;
+      }
+      // 迁移旧版多配置
+      else if (result.apiConfigs && Object.keys(result.apiConfigs).length > 0) {
+        apiEndpoints = migrateOldConfigs(result.apiConfigs, result.currentApiConfig);
+        needsSave = true;
+        console.log('[VocabMeld] 迁移旧版多配置:', apiEndpoints);
+      }
+      // 迁移旧版单配置
+      else if (result.apiEndpoint) {
+        apiEndpoints = [{
+          id: generateId(),
+          name: '默认配置',
+          endpoint: result.apiEndpoint,
+          apiKey: result.apiKey || '',
+          model: result.modelName || '',
+          qpm: 60,
+          enabled: true
+        }];
+        needsSave = true;
+        console.log('[VocabMeld] 迁移旧版单配置:', apiEndpoints);
+      }
+      // 全新安装，使用默认配置
+      else {
+        apiEndpoints = DEFAULT_API_ENDPOINTS.map(ep => ({ ...ep, id: generateId() }));
+        needsSave = true;
+      }
+
+      // 保存迁移后的配置，避免重复迁移
+      if (needsSave) {
+        saveEndpoints();
+      }
+
+      renderEndpointsList();
       if (callback) callback();
     });
   }
 
-  // 更新配置下拉框
-  function updateConfigSelect() {
-    const select = elements.apiConfigSelect;
-    select.innerHTML = '';
-    
-    // 添加已有配置
-    Object.keys(apiConfigs).forEach(name => {
-      const option = document.createElement('option');
-      option.value = name;
-      option.textContent = name;
-      if (name === currentConfigName) {
-        option.selected = true;
-      }
-      select.appendChild(option);
-    });
-    
-    // 同步更新配置名称输入框
-    if (currentConfigName) {
-      elements.configName.value = currentConfigName;
+  // 迁移旧版配置
+  function migrateOldConfigs(oldConfigs, currentConfigName) {
+    const endpoints = [];
+
+    for (const [name, config] of Object.entries(oldConfigs)) {
+      endpoints.push({
+        id: generateId(),
+        name: name,  // 保留原有配置名称
+        endpoint: config.endpoint || '',
+        apiKey: config.apiKey || '',
+        model: config.model || '',
+        qpm: 60,
+        enabled: name === currentConfigName  // 只有当前使用的配置启用
+      });
     }
+
+    // 确保至少有一个激活的节点
+    if (!endpoints.some(ep => ep.enabled) && endpoints.length > 0) {
+      endpoints[0].enabled = true;
+    }
+
+    return endpoints;
   }
 
-  // 应用选中的配置
-  function applyConfig(name) {
-    if (!apiConfigs[name]) {
-      // 新建配置 - 清空所有字段
-      elements.configName.value = '';
-      elements.apiEndpoint.value = '';
-      elements.apiKey.value = '';
-      elements.modelName.value = '';
-      currentConfigName = '';
+  // 渲染节点列表
+  function renderEndpointsList() {
+    if (!elements.endpointsList) return;
+
+    if (apiEndpoints.length === 0) {
+      elements.endpointsList.innerHTML = '<div class="empty-list">暂无 API 节点，请添加</div>';
       return;
     }
-    
-    const config = apiConfigs[name];
-    elements.configName.value = name;
-    elements.apiEndpoint.value = config.endpoint || '';
-    elements.apiKey.value = config.apiKey || '';
-    elements.modelName.value = config.model || '';
-    currentConfigName = name;
+
+    // 获取使用统计
+    chrome.storage.local.get('endpointUsage', (result) => {
+      const usage = result.endpointUsage || {};
+      const now = Date.now();
+      const windowStart = now - 60000; // 1分钟窗口
+
+      elements.endpointsList.innerHTML = apiEndpoints.map((ep, index) => {
+        const epUsage = usage[ep.id] || { requests: [] };
+        const recentRequests = (epUsage.requests || []).filter(t => t > windowStart).length;
+        const qpmDisplay = ep.qpm > 0 ? `${recentRequests}/${ep.qpm}` : `${recentRequests}`;
+
+        return `
+          <div class="endpoint-card ${ep.enabled ? 'enabled' : 'disabled'}"
+               data-id="${ep.id}"
+               draggable="true">
+            <div class="endpoint-drag-handle">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path fill="currentColor" d="M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V13M9,15H11V17H9V15M13,15H15V17H13V17M9,19H11V21H9V19M13,19H15V21H13V21Z"/>
+              </svg>
+            </div>
+            <div class="endpoint-info">
+              <div class="endpoint-header">
+                <span class="endpoint-name">${ep.name}</span>
+              </div>
+              <div class="endpoint-usage">
+                <span class="usage-badge" title="当前时间窗口请求数${ep.qpm > 0 ? '/限制' : ''}">
+                  <svg viewBox="0 0 24 24" width="12" height="12">
+                    <path fill="currentColor" d="M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22C6.47,22 2,17.5 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z"/>
+                  </svg>
+                  ${qpmDisplay}
+                </span>
+              </div>
+            </div>
+            <div class="endpoint-actions">
+              <button class="btn-icon endpoint-toggle ${ep.enabled ? 'enabled' : 'disabled'}" data-id="${ep.id}" title="${ep.enabled ? '点击停用' : '点击启用'}">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                  <path fill="currentColor" d="${ep.enabled ? 'M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z' : 'M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z'}"/>
+                </svg>
+              </button>
+              <button class="btn-icon endpoint-edit" data-id="${ep.id}" title="编辑">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                  <path fill="currentColor" d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // 绑定事件
+      bindEndpointCardEvents();
+    });
   }
 
-  // 保存当前配置
-  function saveCurrentConfig() {
-    const configName = elements.configName.value.trim();
-    const endpoint = elements.apiEndpoint.value.trim();
-    const apiKey = elements.apiKey.value.trim();
-    const model = elements.modelName.value.trim();
-    
-    // 非空检测
-    if (!configName) {
-      showConfigToast('请输入配置名称', true);
-      elements.configName.focus();
+  // 绑定节点卡片事件
+  function bindEndpointCardEvents() {
+    // 拖拽排序
+    elements.endpointsList.querySelectorAll('.endpoint-card').forEach(card => {
+      card.addEventListener('dragstart', handleDragStart);
+      card.addEventListener('dragover', handleDragOver);
+      card.addEventListener('drop', handleDrop);
+      card.addEventListener('dragend', handleDragEnd);
+    });
+
+    // 切换启用状态 - 对勾按钮
+    elements.endpointsList.querySelectorAll('.endpoint-toggle').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        toggleEndpoint(id);
+      });
+    });
+
+    // 编辑
+    elements.endpointsList.querySelectorAll('.endpoint-edit').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        openEndpointModal(id);
+      });
+    });
+  }
+
+  // 拖拽处理函数
+  function handleDragStart(e) {
+    draggedItem = this;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const afterElement = getDragAfterElement(elements.endpointsList, e.clientY);
+    const dragging = elements.endpointsList.querySelector('.dragging');
+
+    if (afterElement == null) {
+      elements.endpointsList.appendChild(dragging);
+    } else {
+      elements.endpointsList.insertBefore(dragging, afterElement);
+    }
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+  }
+
+  function handleDragEnd(e) {
+    this.classList.remove('dragging');
+
+    // 更新顺序
+    const newOrder = Array.from(elements.endpointsList.querySelectorAll('.endpoint-card'))
+      .map(card => card.dataset.id);
+
+    apiEndpoints.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+    saveEndpoints();
+    draggedItem = null;
+  }
+
+  function getDragAfterElement(container, y) {
+    const draggableElements = [...container.querySelectorAll('.endpoint-card:not(.dragging)')];
+
+    return draggableElements.reduce((closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+
+      if (offset < 0 && offset > closest.offset) {
+        return { offset, element: child };
+      } else {
+        return closest;
+      }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+  }
+
+  // 切换节点启用状态
+  function toggleEndpoint(id) {
+    const endpoint = apiEndpoints.find(ep => ep.id === id);
+    if (!endpoint) return;
+
+    // 如果要禁用，检查是否是最后一个启用的节点
+    if (endpoint.enabled) {
+      const enabledCount = apiEndpoints.filter(ep => ep.enabled).length;
+      if (enabledCount <= 1) {
+        showGlobalToast('至少需要保持一个节点启用', 'error');
+        return;
+      }
+    }
+
+    endpoint.enabled = !endpoint.enabled;
+    saveEndpoints();
+    renderEndpointsList();
+  }
+
+  // 打开节点编辑弹窗
+  function openEndpointModal(id = null) {
+    editingEndpointId = id;
+
+    if (id) {
+      const endpoint = apiEndpoints.find(ep => ep.id === id);
+      if (!endpoint) return;
+
+      elements.endpointModalTitle.textContent = '编辑节点';
+      elements.endpointName.value = endpoint.name;
+      elements.endpointUrl.value = endpoint.endpoint;
+      elements.endpointApiKey.value = endpoint.apiKey;
+      elements.endpointModel.value = endpoint.model;
+      elements.endpointQpm.value = endpoint.qpm || 0;
+      elements.deleteEndpointBtn.style.display = 'block';
+    } else {
+      elements.endpointModalTitle.textContent = '添加节点';
+      elements.endpointName.value = '';
+      elements.endpointUrl.value = '';
+      elements.endpointApiKey.value = '';
+      elements.endpointModel.value = '';
+      elements.endpointQpm.value = 60;
+      elements.deleteEndpointBtn.style.display = 'none';
+    }
+
+    elements.testEndpointResult.textContent = '';
+    elements.testEndpointResult.className = 'test-result';
+    elements.endpointModal.classList.add('show');
+  }
+
+  // 关闭节点编辑弹窗
+  function closeEndpointModal() {
+    elements.endpointModal.classList.remove('show');
+    editingEndpointId = null;
+  }
+
+  // 保存节点
+  function saveEndpoint() {
+    const name = elements.endpointName.value.trim();
+    const endpoint = elements.endpointUrl.value.trim();
+    const apiKey = elements.endpointApiKey.value.trim();
+    const model = elements.endpointModel.value.trim();
+    const qpm = parseInt(elements.endpointQpm.value) || 0;
+
+    if (!name) {
+      showEndpointToast('请输入节点名称', true);
+      elements.endpointName.focus();
       return;
     }
     if (!endpoint) {
-      showConfigToast('请输入 API 端点', true);
-      elements.apiEndpoint.focus();
+      showEndpointToast('请输入 API 地址', true);
+      elements.endpointUrl.focus();
       return;
     }
     if (!model) {
-      showConfigToast('请输入模型名称', true);
-      elements.modelName.focus();
+      showEndpointToast('请输入模型名称', true);
+      elements.endpointModel.focus();
       return;
     }
-    
-    // 检查是否是重命名（当前选中的配置名与输入的不同）
-    const selectedConfig = elements.apiConfigSelect.value;
-    if (selectedConfig && selectedConfig !== configName && apiConfigs[selectedConfig]) {
-      // 删除旧名称的配置
-      delete apiConfigs[selectedConfig];
-    }
-    
-    // 保存配置
-    apiConfigs[configName] = {
-      endpoint: endpoint,
-      apiKey: apiKey,
-      model: model
-    };
-    
-    currentConfigName = configName;
-    
-    // 保存到存储
-    chrome.storage.sync.set({ 
-      apiConfigs: apiConfigs,
-      currentApiConfig: currentConfigName,
-      apiEndpoint: endpoint,
-      apiKey: apiKey,
-      modelName: model
-    }, () => {
-      updateConfigSelect();
-      showConfigToast(`配置 "${configName}" 已保存`);
-    });
-  }
 
-  // 删除配置
-  function deleteCurrentConfig() {
-    const configName = elements.apiConfigSelect.value;
-    if (configName === '_new') return;
-    
-    if (Object.keys(apiConfigs).length <= 1) {
-      alert('至少保留一个配置');
-      return;
-    }
-    
-    if (!confirm(`确定要删除配置 "${configName}" 吗？`)) return;
-    
-    delete apiConfigs[configName];
-    currentConfigName = Object.keys(apiConfigs)[0];
-    
-    // 保存到存储并应用新配置
-    chrome.storage.sync.set({ 
-      apiConfigs: apiConfigs,
-      currentApiConfig: currentConfigName
-    }, () => {
-      updateConfigSelect();
-      applyConfig(currentConfigName);
-      // 同时更新当前使用的 API 配置
-      const config = apiConfigs[currentConfigName];
-      chrome.storage.sync.set({
-        apiEndpoint: config.endpoint,
-        apiKey: config.apiKey,
-        modelName: config.model
+    if (editingEndpointId) {
+      // 编辑现有节点 - 保留原有的 enabled 状态
+      const idx = apiEndpoints.findIndex(ep => ep.id === editingEndpointId);
+      if (idx >= 0) {
+        const existingEnabled = apiEndpoints[idx].enabled;
+        apiEndpoints[idx] = { ...apiEndpoints[idx], name, endpoint, apiKey, model, qpm, enabled: existingEnabled };
+      }
+    } else {
+      // 添加新节点 - 默认启用
+      apiEndpoints.push({
+        id: generateId(),
+        name,
+        endpoint,
+        apiKey,
+        model,
+        qpm,
+        enabled: true
       });
-      showConfigToast(`配置 "${configName}" 已删除`);
+    }
+
+    saveEndpoints();
+    renderEndpointsList();
+    closeEndpointModal();
+  }
+
+  // 删除节点
+  function deleteEndpoint() {
+    if (!editingEndpointId) return;
+
+    if (apiEndpoints.length <= 1) {
+      showEndpointToast('至少保留一个节点', true);
+      return;
+    }
+
+    if (!confirm('确定要删除此节点吗？')) return;
+
+    apiEndpoints = apiEndpoints.filter(ep => ep.id !== editingEndpointId);
+
+    // 确保至少有一个激活的节点
+    if (!apiEndpoints.some(ep => ep.enabled) && apiEndpoints.length > 0) {
+      apiEndpoints[0].enabled = true;
+    }
+
+    saveEndpoints();
+    renderEndpointsList();
+    closeEndpointModal();
+  }
+
+  // 保存节点配置到存储
+  function saveEndpoints() {
+    chrome.storage.sync.set({ apiEndpoints }, () => {
+      // 同时更新旧版字段以保持向后兼容
+      const activeEndpoint = apiEndpoints.find(ep => ep.enabled);
+      if (activeEndpoint) {
+        chrome.storage.sync.set({
+          apiEndpoint: activeEndpoint.endpoint,
+          apiKey: activeEndpoint.apiKey,
+          modelName: activeEndpoint.model
+        });
+      }
     });
   }
 
-  // 显示配置操作提示
-  function showConfigToast(message, isError = false) {
-    elements.testResult.textContent = message;
-    elements.testResult.className = isError ? 'test-result error' : 'test-result success';
+  // 测试节点连接
+  async function testEndpointConnection() {
+    const endpoint = elements.endpointUrl.value.trim();
+    const apiKey = elements.endpointApiKey.value.trim();
+    const model = elements.endpointModel.value.trim();
+
+    if (!endpoint || !model) {
+      showEndpointToast('请填写 API 地址和模型名称', true);
+      return;
+    }
+
+    elements.testEndpointBtn.disabled = true;
+    elements.testEndpointResult.textContent = '测试中...';
+    elements.testEndpointResult.className = 'test-result';
+
+    chrome.runtime.sendMessage({
+      action: 'testApi',
+      endpoint,
+      apiKey,
+      model
+    }, (response) => {
+      elements.testEndpointBtn.disabled = false;
+      if (response?.success) {
+        elements.testEndpointResult.textContent = '✓ 连接成功';
+        elements.testEndpointResult.className = 'test-result success';
+      } else {
+        elements.testEndpointResult.textContent = '✗ ' + (response?.message || '连接失败');
+        elements.testEndpointResult.className = 'test-result error';
+      }
+    });
+  }
+
+  // 显示全局提示
+  function showGlobalToast(message, type = 'info') {
+    const toast = document.getElementById('globalToast');
+    if (!toast) return;
+
+    toast.textContent = message;
+    toast.className = 'global-toast show' + (type !== 'info' ? ' ' + type : '');
+
     setTimeout(() => {
-      elements.testResult.textContent = '';
-      elements.testResult.className = 'test-result';
+      toast.className = 'global-toast';
+    }, 2500);
+  }
+
+  // 显示节点操作提示（弹窗内）
+  function showEndpointToast(message, isError = false) {
+    elements.testEndpointResult.textContent = message;
+    elements.testEndpointResult.className = isError ? 'test-result error' : 'test-result success';
+    setTimeout(() => {
+      elements.testEndpointResult.textContent = '';
+      elements.testEndpointResult.className = 'test-result';
     }, 2000);
   }
 
   // 加载配置
   async function loadSettings() {
-    // 先加载 API 配置列表
-    loadApiConfigs(() => {
-      // 应用当前选中的配置
-      if (currentConfigName && apiConfigs[currentConfigName]) {
-        applyConfig(currentConfigName);
-      }
-    });
+    // 先加载 API 节点列表
+    loadApiEndpoints();
     
     chrome.storage.sync.get(null, (result) => {
       // 主题
@@ -854,12 +1122,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         radio.checked = radio.value === theme;
       });
 
-      // API 配置（如果没有配置列表，使用直接存储的值作为后备）
-      if (!result.apiConfigs) {
-        elements.apiEndpoint.value = result.apiEndpoint || DEFAULT_API_CONFIGS['DeepSeek'].endpoint;
-        elements.apiKey.value = result.apiKey || '';
-        elements.modelName.value = result.modelName || DEFAULT_API_CONFIGS['DeepSeek'].model;
-      }
+      // API 配置现在通过 apiEndpoints 管理，不再需要旧字段
+      // 迁移逻辑在 loadApiEndpoints 中处理
       
       // 学习偏好
       elements.nativeLanguage.value = result.nativeLanguage || 'zh-CN';
@@ -1225,11 +1489,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 保存设置（静默保存）
   async function saveSettings() {
     const currentRange = getCurrentDifficultyRange();
+    // API 配置现在通过 saveEndpoints 单独保存，这里不再包含
     const settings = {
       theme: document.querySelector('input[name="theme"]:checked').value,
-      apiEndpoint: elements.apiEndpoint.value.trim(),
-      apiKey: elements.apiKey.value.trim(),
-      modelName: elements.modelName.value.trim(),
       nativeLanguage: elements.nativeLanguage.value,
       targetLanguage: elements.targetLanguage.value,
       difficultyLevel: currentRange.minLevel,
@@ -1272,12 +1534,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   function addAutoSaveListeners() {
     // 文本输入框 - 失焦时保存
     const textInputs = [
-      elements.apiEndpoint,
-      elements.apiKey,
-      elements.modelName,
       elements.excludedSitesInput,
       elements.allowedSitesInput
-    ];
+    ].filter(Boolean);
 
     textInputs.forEach(input => {
       input.addEventListener('blur', () => debouncedSave());
@@ -1521,80 +1780,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         switchToSection(section);
       });
     });
-    
+
     // 监听 hash 变化（浏览器前进后退）
     window.addEventListener('hashchange', loadSectionFromHash);
 
-    // 配置选择器
-    elements.apiConfigSelect.addEventListener('change', () => {
-      const selectedValue = elements.apiConfigSelect.value;
-      applyConfig(selectedValue);
-      // 切换配置时保存当前使用的配置
-      if (apiConfigs[selectedValue]) {
-        chrome.storage.sync.set({ 
-          currentApiConfig: selectedValue,
-          apiEndpoint: elements.apiEndpoint.value,
-          apiKey: elements.apiKey.value,
-          modelName: elements.modelName.value
-        });
-      }
-    });
+    // API 节点相关事件
+    if (elements.addEndpointBtn) {
+      elements.addEndpointBtn.addEventListener('click', () => openEndpointModal());
+    }
 
-    // 新建配置按钮
-    elements.newConfigBtn.addEventListener('click', () => {
-      // 添加临时的"新建配置"选项并选中
-      const select = elements.apiConfigSelect;
-      let newOption = select.querySelector('option[value="_new"]');
-      if (!newOption) {
-        newOption = document.createElement('option');
-        newOption.value = '_new';
-        newOption.textContent = '— 新建配置 —';
-        select.insertBefore(newOption, select.firstChild);
-      }
-      select.value = '_new';
-      
-      elements.configName.value = '';
-      elements.apiEndpoint.value = '';
-      elements.apiKey.value = '';
-      elements.modelName.value = '';
-      currentConfigName = '';
-      elements.configName.focus();
-    });
+    if (elements.saveEndpointBtn) {
+      elements.saveEndpointBtn.addEventListener('click', saveEndpoint);
+    }
 
-    // 保存配置按钮
-    elements.saveConfigBtn.addEventListener('click', saveCurrentConfig);
-    
-    // 删除配置按钮
-    elements.deleteConfigBtn.addEventListener('click', deleteCurrentConfig);
+    if (elements.cancelEndpointBtn) {
+      elements.cancelEndpointBtn.addEventListener('click', closeEndpointModal);
+    }
+
+    if (elements.cancelEndpointBtn2) {
+      elements.cancelEndpointBtn2.addEventListener('click', closeEndpointModal);
+    }
+
+    if (elements.deleteEndpointBtn) {
+      elements.deleteEndpointBtn.addEventListener('click', deleteEndpoint);
+    }
+
+    if (elements.testEndpointBtn) {
+      elements.testEndpointBtn.addEventListener('click', testEndpointConnection);
+    }
 
     // 切换 API 密钥可见性
-    elements.toggleApiKey.addEventListener('click', () => {
-      const type = elements.apiKey.type === 'password' ? 'text' : 'password';
-      elements.apiKey.type = type;
-    });
+    if (elements.toggleEndpointApiKey) {
+      elements.toggleEndpointApiKey.addEventListener('click', () => {
+        const type = elements.endpointApiKey.type === 'password' ? 'text' : 'password';
+        elements.endpointApiKey.type = type;
+      });
+    }
 
-    // 测试连接
-    elements.testConnectionBtn.addEventListener('click', async () => {
-      elements.testConnectionBtn.disabled = true;
-      elements.testResult.textContent = '测试中...';
-      elements.testResult.className = 'test-result';
-
-      chrome.runtime.sendMessage({
-        action: 'testApi',
-        endpoint: elements.apiEndpoint.value,
-        apiKey: elements.apiKey.value,
-        model: elements.modelName.value
-      }, (response) => {
-        elements.testConnectionBtn.disabled = false;
-        if (response?.success) {
-          elements.testResult.textContent = '✓ 连接成功';
-          elements.testResult.className = 'test-result success';
-        } else {
-          elements.testResult.textContent = '✗ ' + (response?.message || '连接失败');
-          elements.testResult.className = 'test-result error';
+    // 点击弹窗背景关闭
+    if (elements.endpointModal) {
+      elements.endpointModal.addEventListener('click', (e) => {
+        if (e.target === elements.endpointModal) {
+          closeEndpointModal();
         }
       });
-    });
+    }
 
     // 词汇标签切换
     elements.wordTabs.forEach(tab => {

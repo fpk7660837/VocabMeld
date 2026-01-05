@@ -26,7 +26,7 @@
 
 ## ✨ 核心亮点
 
-- **多 LLM 支持** — 兼容 OpenAI、DeepSeek、Moonshot、Groq、Ollama 等主流 AI 服务
+- **多 LLM 支持** — 兼容 OpenAI、DeepSeek、Qwen、Groq、Ollama 等主流 AI 服务
 - **CEFR 难度区间** — 精准过滤 A1-C2 任意区间，避开过易/过难词汇
 - **智能缓存加速** — LRU 缓存（最高 10000 词），二次访问毫秒级响应
 - **双向翻译** — 自动检测页面语言，智能决定翻译方向
@@ -51,11 +51,11 @@
 
 ### 支持的 API 服务
 
-| 服务商 | 端点 | 推荐模型 |
+| 服务商 | 端点 | 示例模型 |
 |--------|------|----------|
 | DeepSeek | `https://api.deepseek.com/chat/completions` | deepseek-chat |
 | OpenAI | `https://api.openai.com/v1/chat/completions` | gpt-4o-mini |
-| Moonshot | `https://api.moonshot.cn/v1/chat/completions` | moonshot-v1-8k |
+| Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` | qwen-plus |
 | Groq | `https://api.groq.com/openai/v1/chat/completions` | llama-3.1-8b-instant |
 | Ollama | `http://localhost:11434/v1/chat/completions` | qwen2.5:7b |
 

@@ -3,6 +3,144 @@
  * 处理扩展级别的事件和消息
  */
 
+// 多节点轮询状态
+let endpointRoundRobin = 0;
+
+// 获取可用的 API 节点（已启用且未超过速率限制）
+async function getAvailableEndpoints() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['apiEndpoints', 'apiConfigs', 'currentApiConfig', 'apiEndpoint', 'apiKey', 'modelName'], (syncResult) => {
+      chrome.storage.local.get('endpointUsage', (localResult) => {
+        let endpoints = syncResult.apiEndpoints || [];
+
+        // 兼容旧版多配置 (apiConfigs)
+        if (endpoints.length === 0 && syncResult.apiConfigs && Object.keys(syncResult.apiConfigs).length > 0) {
+          const currentConfig = syncResult.currentApiConfig;
+          endpoints = Object.entries(syncResult.apiConfigs).map(([name, config]) => ({
+            id: name.toLowerCase().replace(/\s+/g, '-'),
+            name: name,
+            endpoint: config.endpoint || '',
+            apiKey: config.apiKey || '',
+            model: config.model || '',
+            qpm: 0,
+            enabled: name === currentConfig
+          }));
+          // 确保至少有一个启用
+          if (!endpoints.some(ep => ep.enabled) && endpoints.length > 0) {
+            endpoints[0].enabled = true;
+          }
+        }
+        // 兼容旧版单配置
+        else if (endpoints.length === 0 && syncResult.apiEndpoint) {
+          endpoints = [{
+            id: 'legacy',
+            name: '默认配置',
+            endpoint: syncResult.apiEndpoint,
+            apiKey: syncResult.apiKey || '',
+            model: syncResult.modelName || '',
+            qpm: 0,
+            enabled: true
+          }];
+        }
+
+        const usage = localResult.endpointUsage || {};
+        const now = Date.now();
+        const windowStart = now - 60000; // 1分钟窗口
+
+        // 筛选可用节点
+        const available = endpoints.filter(ep => {
+          if (!ep.enabled) return false;
+
+          const epUsage = usage[ep.id] || { requests: [] };
+          const recentRequests = (epUsage.requests || []).filter(t => t > windowStart).length;
+
+          // 如果 qpm 为 0 表示不限速
+          if (ep.qpm === 0) return true;
+
+          return recentRequests < ep.qpm;
+        });
+
+        resolve({ endpoints, available, usage });
+      });
+    });
+  });
+}
+
+// 选择下一个节点（轮询策略）
+function selectNextEndpoint(available) {
+  if (available.length === 0) return null;
+
+  endpointRoundRobin = (endpointRoundRobin + 1) % available.length;
+  return available[endpointRoundRobin];
+}
+
+// 记录节点使用
+async function recordEndpointUsage(endpointId) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get('endpointUsage', (result) => {
+      const usage = result.endpointUsage || {};
+      const now = Date.now();
+      const windowStart = now - 60000;
+
+      if (!usage[endpointId]) {
+        usage[endpointId] = { requests: [] };
+      }
+
+      // 清理过期记录并添加新记录
+      usage[endpointId].requests = usage[endpointId].requests
+        .filter(t => t > windowStart)
+        .concat([now]);
+
+      chrome.storage.local.set({ endpointUsage: usage }, resolve);
+    });
+  });
+}
+
+// 带重试和节点切换的 API 调用
+async function callApiWithRetry(body, maxRetries = 3) {
+  let lastError = null;
+  let triedEndpoints = new Set();
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { available } = await getAvailableEndpoints();
+
+    // 过滤掉已尝试失败的节点
+    const remaining = available.filter(ep => !triedEndpoints.has(ep.id));
+
+    if (remaining.length === 0) {
+      // 所有节点都已尝试或不可用
+      throw lastError || new Error('没有可用的 API 节点');
+    }
+
+    const endpoint = selectNextEndpoint(remaining);
+    if (!endpoint) {
+      throw new Error('没有可用的 API 节点');
+    }
+
+    try {
+      // 记录使用
+      await recordEndpointUsage(endpoint.id);
+
+      const result = await callApi(
+        endpoint.endpoint,
+        endpoint.apiKey,
+        { ...body, model: endpoint.model }
+      );
+
+      return result;
+    } catch (error) {
+      console.log(`[VocabMeld] Endpoint ${endpoint.name} failed:`, error.message);
+      lastError = error;
+      triedEndpoints.add(endpoint.id);
+
+      // 继续尝试下一个节点
+      continue;
+    }
+  }
+
+  throw lastError || new Error('API 调用失败');
+}
+
 // 安装/更新时初始化
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[VocabMeld] Extension installed/updated:', details.reason);
@@ -187,8 +325,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // 发送 API 请求（避免 CORS 问题）
+  // 发送 API 请求（避免 CORS 问题）- 使用多节点轮询
   if (message.action === 'apiRequest') {
+    callApiWithRetry(message.body)
+      .then(data => sendResponse({ success: true, data }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  // 发送 API 请求（指定节点，不使用轮询）
+  if (message.action === 'apiRequestDirect') {
     callApi(message.endpoint, message.apiKey, message.body)
       .then(data => sendResponse({ success: true, data }))
       .catch(error => sendResponse({ success: false, error: error.message }));
