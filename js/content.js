@@ -386,11 +386,12 @@
 
   async function addToWhitelist(original, translation, difficulty) {
     const whitelist = config.learnedWords || [];
-    const exists = whitelist.some(w => w.original === original || w.word === translation);
+    const lowerOriginal = original.toLowerCase();
+    const exists = whitelist.some(w => (w.original || '').toLowerCase() === lowerOriginal);
     if (!exists) {
-      whitelist.push({ 
-        original, 
-        word: translation, 
+      whitelist.push({
+        original,
+        word: translation,
         addedAt: Date.now(),
         difficulty: difficulty || 'B1'
       });
@@ -600,18 +601,27 @@
     const style = config.translationStyle || 'translation-original';
     let innerHTML = '';
     
+    // Add vertical class if using vertical style
+    if (style === 'vertical') {
+      wrapper.classList.add('vocabmeld-vertical');
+    }
+
     switch (style) {
       case 'translation-only':
-        // 只显示译文
+        // Only show translation
         innerHTML = `<span class="vocabmeld-word">${translation}</span>`;
         break;
       case 'original-translation':
-        // 原文(译文)
+        // Original(Translation)
         innerHTML = `<span class="vocabmeld-original">${original}</span><span class="vocabmeld-word">(${translation})</span>`;
+        break;
+      case 'vertical':
+        // Original on top, translation below (vertical display)
+        innerHTML = `<span class="vocabmeld-original">${original}</span><span class="vocabmeld-word">${translation}</span>`;
         break;
       case 'translation-original':
       default:
-        // 译文(原文) - 默认样式
+        // Translation(Original) - default style
         innerHTML = `<span class="vocabmeld-word">${translation}</span><span class="vocabmeld-original">(${original})</span>`;
         break;
     }

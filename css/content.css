@@ -139,6 +139,30 @@
   opacity: 1 !important;
 }
 
+/* Vertical display style - original on top, translation below */
+.vocabmeld-translated.vocabmeld-vertical {
+  display: inline !important;
+  position: relative !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.vocabmeld-translated.vocabmeld-vertical .vocabmeld-original {
+  display: inline !important;
+}
+
+.vocabmeld-translated.vocabmeld-vertical .vocabmeld-word {
+  position: absolute !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  top: 100% !important;
+  margin-top: 2px !important;
+  white-space: nowrap !important;
+  font-size: 12px !important;
+  pointer-events: none !important;
+  line-height: 1 !important;
+}
+
 .vocabmeld-tooltip {
   position: absolute !important;
   z-index: 2147483647 !important;
