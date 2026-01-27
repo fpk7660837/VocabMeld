@@ -396,7 +396,16 @@
         difficulty: difficulty || 'B1'
       });
       config.learnedWords = whitelist;
-      await new Promise(resolve => chrome.storage.local.set({ learnedWords: whitelist }, resolve));
+      await new Promise((resolve, reject) => {
+        chrome.storage.local.set({ learnedWords: whitelist }, () => {
+          if (chrome.runtime.lastError) {
+            console.error('[VocabMeld] Failed to save learned word:', chrome.runtime.lastError);
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve();
+          }
+        });
+      });
     }
   }
 
@@ -2422,7 +2431,7 @@ ${originalWord}
     }, true); // 使用捕获模式
 
     // tooltip 按钮点击事件
-    document.addEventListener('click', (e) => {
+    document.addEventListener('click', async (e) => {
       // 发音按钮
       const speakBtn = e.target.closest('.vocabmeld-btn-speak');
       if (speakBtn) {
@@ -2492,11 +2501,16 @@ ${originalWord}
         const original = learnedBtn.getAttribute('data-original');
         const translation = learnedBtn.getAttribute('data-translation');
         const difficulty = learnedBtn.getAttribute('data-difficulty') || 'B1';
-        
-        addToWhitelist(original, translation, difficulty);
-        restoreAllSameWord(original);
-        hideTooltip();
-        showToast(`"${original}" 已标记为已学会`);
+
+        try {
+          await addToWhitelist(original, translation, difficulty);
+          restoreAllSameWord(original);
+          hideTooltip();
+          showToast(`"${original}" 已标记为已学会`);
+        } catch (error) {
+          console.error('[VocabMeld] Failed to mark as learned:', error);
+          showToast(`标记失败，请重试`);
+        }
         return;
       }
       
