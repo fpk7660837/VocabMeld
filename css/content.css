@@ -124,6 +124,7 @@
   color: inherit !important;
   font-weight: inherit !important;
   font-size: inherit !important;
+  font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans SC", "Source Han Sans SC", sans-serif !important;
   pointer-events: auto !important;
   visibility: visible !important;
   opacity: 1 !important;
@@ -194,6 +195,7 @@
 .vocabmeld-tooltip .vocabmeld-tooltip-word {
   font-size: 18px !important;
   font-weight: 600 !important;
+  font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans SC", "Source Han Sans SC", sans-serif !important;
   color: #818cf8 !important;
   margin: 0 !important;
   padding: 0 !important;
@@ -448,6 +450,7 @@
   color: #94a3b8 !important;
   margin-bottom: 2px !important;
   line-height: 1.4 !important;
+  font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans SC", "Source Han Sans SC", sans-serif !important;
 }
 
 .vocabmeld-tooltip[data-theme="light"] .vocabmeld-dict-defs li {
